@@ -37,6 +37,9 @@
   .btn-primary { background: #2481cc; color: #fff; width: 100%; }
   .btn-join { background: #34c759; color: #fff; }
   .btn-leave { background: #ff3b30; color: #fff; }
+  .btn-edit { background: #e5e5e7; color: #1a1a1a; }
+  .card-actions { display: flex; gap: 8px; }
+  .card-actions button { flex: 1; }
   .fab {
     position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px;
     border-radius: 50%; background: #2481cc; color: #fff; font-size: 28px;
@@ -62,7 +65,7 @@
   }
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
   .cal-day { padding: 8px 0; font-size: 13px; border-radius: 6px; }
-  .cal-day.has-event { background: #2481cc; color: #fff; font-weight: 700; }
+  .cal-day.has-event { background: #34c759; color: #fff; font-weight: 700; }
   .cal-head { font-size: 11px; color: #888; }
   .empty { text-align: center; color: #999; padding: 30px 0; font-size: 14px; }
 </style>
@@ -91,10 +94,10 @@
   </div>
 </div>
 
-<!-- Создание события -->
+<!-- Создание/редактирование события -->
 <div class="modal-bg" id="create-modal">
   <div class="modal">
-    <h2>Новое событие</h2>
+    <h2 id="create-modal-title">Новое событие</h2>
     <select id="ev-type">
       <option value="Вывоз мусора">Вывоз мусора</option>
       <option value="Субботник">Субботник</option>
@@ -126,6 +129,7 @@ const defaultName = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolea
 
 let currentResident = null;
 let events = [];
+let editingEventId = null;
 const todayDate = new Date();
 let calYear = todayDate.getFullYear();
 let calMonth = todayDate.getMonth();
@@ -179,15 +183,19 @@ function renderCard(e) {
   const joined = e.participants?.some(p => p.user_id === userId);
   const names = (e.participants || []).map(p => p.residents?.name).filter(Boolean).join(", ") || "пока никто";
   const dateStr = new Date(e.date + "T00:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  const isOwner = e.created_by === userId;
   return `
     <div class="card">
       <div class="type">${e.type}</div>
       <div class="when">📅 ${dateStr}${e.time ? ", " + e.time.slice(0,5) : ""}</div>
       ${e.description ? `<div class="desc">${e.description}</div>` : ""}
       <div class="who">Участники: ${names}</div>
-      <button class="${joined ? "btn-leave" : "btn-join"}" data-id="${e.id}" data-joined="${joined}">
-        ${joined ? "Не пойду" : "Присоединиться"}
-      </button>
+      <div class="card-actions">
+        <button class="${joined ? "btn-leave" : "btn-join"}" data-id="${e.id}" data-joined="${joined}">
+          ${joined ? "Не пойду" : "Присоединиться"}
+        </button>
+        ${isOwner ? `<button class="btn-edit" data-edit-id="${e.id}">Изменить</button>` : ""}
+      </div>
     </div>`;
 }
 
@@ -204,6 +212,23 @@ function attachCardHandlers() {
       await loadEvents();
     };
   });
+  document.querySelectorAll("[data-edit-id]").forEach(btn => {
+    btn.onclick = () => {
+      const ev = events.find(e => e.id === btn.dataset.editId);
+      if (ev) openEditModal(ev);
+    };
+  });
+}
+
+function openEditModal(ev) {
+  editingEventId = ev.id;
+  document.getElementById("create-modal-title").textContent = "Изменить событие";
+  document.getElementById("ev-type").value = ev.type;
+  document.getElementById("ev-date").value = ev.date;
+  document.getElementById("ev-time").value = ev.time ? ev.time.slice(0,5) : "";
+  document.getElementById("ev-desc").value = ev.description || "";
+  document.getElementById("ev-save").textContent = "Сохранить";
+  document.getElementById("create-modal").classList.add("open");
 }
 
 function renderCalendar() {
@@ -213,7 +238,8 @@ function renderCalendar() {
   const first = new Date(year, month, 1);
   const startDay = (first.getDay() + 6) % 7; // Monday-first
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const eventDates = new Set(events.map(e => e.date));
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const eventDates = new Set(events.filter(e => e.date >= todayStr).map(e => e.date));
 
   let html = `
     <div class="cal-nav">
@@ -254,6 +280,13 @@ document.querySelectorAll(".tab").forEach(tab => {
 });
 
 document.getElementById("fab-add").onclick = () => {
+  editingEventId = null;
+  document.getElementById("create-modal-title").textContent = "Новое событие";
+  document.getElementById("ev-save").textContent = "Создать";
+  document.getElementById("ev-type").value = "Вывоз мусора";
+  document.getElementById("ev-date").value = "";
+  document.getElementById("ev-time").value = "";
+  document.getElementById("ev-desc").value = "";
   document.getElementById("create-modal").classList.add("open");
 };
 
@@ -263,8 +296,19 @@ document.getElementById("ev-save").onclick = async () => {
   const time = document.getElementById("ev-time").value;
   const description = document.getElementById("ev-desc").value.trim();
   if (!date) return alert("Укажите дату");
-  const { error } = await sb.from("events").insert({ type, date, time: time || null, description, created_by: userId });
+
+  let error;
+  if (editingEventId) {
+    ({ error } = await sb.from("events")
+      .update({ type, date, time: time || null, description })
+      .eq("id", editingEventId));
+  } else {
+    ({ error } = await sb.from("events")
+      .insert({ type, date, time: time || null, description, created_by: userId }));
+  }
   if (error) return alert("Ошибка: " + error.message);
+
+  editingEventId = null;
   document.getElementById("create-modal").classList.remove("open");
   document.getElementById("ev-date").value = "";
   document.getElementById("ev-time").value = "";
