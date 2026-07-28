@@ -55,6 +55,11 @@
     background: #fff; width: 100%; max-width: 480px; border-radius: 16px 16px 0 0;
     padding: 20px; max-height: 85vh; overflow-y: auto;
   }
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
+  .cal-nav-btn {
+    width: 36px; height: 36px; border-radius: 8px; background: #e5e5e7;
+    font-size: 16px; font-weight: 700; padding: 0;
+  }
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
   .cal-day { padding: 8px 0; font-size: 13px; border-radius: 6px; }
   .cal-day.has-event { background: #2481cc; color: #fff; font-weight: 700; }
@@ -121,6 +126,9 @@ const defaultName = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolea
 
 let currentResident = null;
 let events = [];
+const todayDate = new Date();
+let calYear = todayDate.getFullYear();
+let calMonth = todayDate.getMonth();
 
 async function init() {
   const { data: resident } = await sb.from("residents").select("*").eq("id", userId).maybeSingle();
@@ -200,14 +208,20 @@ function attachCardHandlers() {
 
 function renderCalendar() {
   const el = document.getElementById("view-calendar");
-  const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth();
+  const year = calYear, month = calMonth;
+  const monthLabel = new Date(year, month, 1).toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
   const first = new Date(year, month, 1);
   const startDay = (first.getDay() + 6) % 7; // Monday-first
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const eventDates = new Set(events.map(e => e.date));
 
-  let html = `<h2>${now.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</h2><div class="cal-grid">`;
+  let html = `
+    <div class="cal-nav">
+      <button class="cal-nav-btn" id="cal-prev">←</button>
+      <h2 style="margin:0">${monthLabel}</h2>
+      <button class="cal-nav-btn" id="cal-next">→</button>
+    </div>
+    <div class="cal-grid">`;
   ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].forEach(d => html += `<div class="cal-head">${d}</div>`);
   for (let i = 0; i < startDay; i++) html += `<div></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -217,6 +231,17 @@ function renderCalendar() {
   }
   html += `</div>`;
   el.innerHTML = html;
+
+  document.getElementById("cal-prev").onclick = () => {
+    calMonth--;
+    if (calMonth < 0) { calMonth = 11; calYear--; }
+    renderCalendar();
+  };
+  document.getElementById("cal-next").onclick = () => {
+    calMonth++;
+    if (calMonth > 11) { calMonth = 0; calYear++; }
+    renderCalendar();
+  };
 }
 
 document.querySelectorAll(".tab").forEach(tab => {
