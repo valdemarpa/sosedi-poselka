@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Соседи посёлка</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, #f4f4f5);
+    color: var(--tg-theme-text-color, #1a1a1a);
+  }
+  h1 { font-size: 20px; margin: 8px 0 16px; }
+  h2 { font-size: 16px; margin: 16px 0 8px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab {
+    flex: 1; padding: 10px; text-align: center; border-radius: 10px;
+    background: #e5e5e7; cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  .tab.active { background: #2481cc; color: #fff; }
+  .card {
+    background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .card .type { font-weight: 700; font-size: 15px; }
+  .card .when { color: #666; font-size: 13px; margin: 4px 0; }
+  .card .desc { font-size: 14px; margin: 6px 0; }
+  .card .who { font-size: 12px; color: #888; margin-bottom: 8px; }
+  button {
+    border: none; border-radius: 8px; padding: 10px 14px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: #2481cc; color: #fff; width: 100%; }
+  .btn-join { background: #34c759; color: #fff; }
+  .btn-leave { background: #ff3b30; color: #fff; }
+  .fab {
+    position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px;
+    border-radius: 50%; background: #2481cc; color: #fff; font-size: 28px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    display: flex; align-items: center; justify-content: center;
+  }
+  input, select, textarea {
+    width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 8px;
+    border: 1px solid #ccc; font-size: 14px;
+  }
+  .modal-bg {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    align-items: flex-end; justify-content: center; z-index: 100;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: #fff; width: 100%; max-width: 480px; border-radius: 16px 16px 0 0;
+    padding: 20px; max-height: 85vh; overflow-y: auto;
+  }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-day { padding: 8px 0; font-size: 13px; border-radius: 6px; }
+  .cal-day.has-event { background: #2481cc; color: #fff; font-weight: 700; }
+  .cal-head { font-size: 11px; color: #888; }
+  .empty { text-align: center; color: #999; padding: 30px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>🏘️ Соседи посёлка</h1>
+
+<div class="tabs">
+  <div class="tab active" data-tab="list">Ближайшие</div>
+  <div class="tab" data-tab="calendar">Календарь</div>
+</div>
+
+<div id="view-list"></div>
+<div id="view-calendar" style="display:none"></div>
+
+<div class="fab" id="fab-add">+</div>
+
+<div class="modal-bg" id="reg-modal">
+  <div class="modal">
+    <h2>Давайте познакомимся</h2>
+    <input id="reg-name" placeholder="Ваше имя">
+    <input id="reg-address" placeholder="Адрес (улица, дом, кв./участок)">
+    <button class="btn-primary" id="reg-save">Продолжить</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="create-modal">
+  <div class="modal">
+    <h2>Новое событие</h2>
+    <select id="ev-type">
+      <option value="Вывоз мусора">Вывоз мусора</option>
+      <option value="Субботник">Субботник</option>
+      <option value="Закупка">Совместная закупка</option>
+      <option value="Другое">Другое</option>
+    </select>
+    <input id="ev-date" type="date">
+    <input id="ev-time" type="time">
+    <textarea id="ev-desc" placeholder="Описание (необязательно)" rows="3"></textarea>
+    <button class="btn-primary" id="ev-save">Создать</button>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://dunqcvxdyfvjdkfddeic.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_famuELOrEel2muGJuvnPVw__OcfHLw-";
+
+const tg = window.Telegram?.WebApp;
+tg?.ready();
+tg?.expand();
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const tgUser = tg?.initDataUnsafe?.user;
+const userId = tgUser?.id || Number(prompt("Тестовый режим: введите ваш ID (число)"));
+const defaultName = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") : "";
+
+let currentResident = null;
+let events = [];
+
+async function init() {
+  const { data: resident } = await supabase.from("residents").select("*").eq("id", userId).maybeSingle();
+  if (!resident) {
+    document.getElementById("reg-name").value = defaultName;
+    document.getElementById("reg-modal").classList.add("open");
+  } else {
+    currentResident = resident;
+    await loadEvents();
+  }
+}
+
+document.getElementById("reg-save").onclick = async () => {
+  const name = document.getElementById("reg-name").value.trim();
+  const address = document.getElementById("reg-address").value.trim();
+  if (!name || !address) return alert("Заполните имя и адрес");
+  const { data, error } = await supabase.from("residents")
+    .insert({ id: userId, name, address }).select().single();
+  if (error) return alert("Ошибка: " + error.message);
+  currentResident = data;
+  document.getElementById("reg-modal").classList.remove("open");
+  await loadEvents();
+};
+
+async function loadEvents() {
+  const { data } = await supabase
+    .from("events")
+    .select("*, participants(user_id, residents(name))")
+    .order("date", { ascending: true });
+  events = data || [];
+  renderList();
+  renderCalendar();
+}
+
+function renderList() {
+  const el = document.getElementById("view-list");
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = events.filter(e => e.date >= today);
+  if (!upcoming.length) {
+    el.innerHTML = '<div class="empty">Пока нет запланированных событий</div>';
+    return;
+  }
+  el.innerHTML = upcoming.map(renderCard).join("");
+  attachCardHandlers();
+}
+
+function renderCard(e) {
+  const joined = e.participants?.some(p => p.user_id === userId);
+  const names = (e.participants || []).map(p => p.residents?.name).filter(Boolean).join(", ") || "пока никто";
+  const dateStr = new Date(e.date + "T00:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  return `
+    <div class="card">
+      <div class="type">${e.type}</div>
+      <div class="when">📅 ${dateStr}${e.time ? ", " + e.time.slice(0,5) : ""}</div>
+      ${e.description ? `<div class="desc">${e.description}</div>` : ""}
+      <div class="who">Участники: ${names}</div>
+      <button class="${joined ? "btn-leave" : "btn-join"}" data-id="${e.id}" data-joined="${joined}">
+        ${joined ? "Не пойду" : "Присоединиться"}
+      </button>
+    </div>`;
+}
+
+function attachCardHandlers() {
+  document.querySelectorAll("[data-id]").forEach(btn => {
+    btn.onclick = async () => {
+      const eventId = btn.dataset.id;
+      const joined = btn.dataset.joined === "true";
+      if (joined) {
+        await supabase.from("participants").delete().eq("event_id", eventId).eq("user_id", userId);
+      } else {
+        await supabase.from("participants").insert({ event_id: eventId, user_id: userId });
+      }
+      await loadEvents();
+    };
+  });
+}
+
+function renderCalendar() {
+  const el = document.getElementById("view-calendar");
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const first = new Date(year, month, 1);
+  const startDay = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const eventDates = new Set(events.map(e => e.date));
+
+  let html = `<h2>${now.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</h2><div class="cal-grid">`;
+  ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].forEach(d => html += `<div class="cal-head">${d}</div>`);
+  for (let i = 0; i < startDay; i++) html += `<div></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const has = eventDates.has(dateStr);
+    html += `<div class="cal-day ${has ? "has-event" : ""}">${d}</div>`;
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("view-list").style.display = tab.dataset.tab === "list" ? "block" : "none";
+    document.getElementById("view-calendar").style.display = tab.dataset.tab === "calendar" ? "block" : "none";
+  };
+});
+
+document.getElementById("fab-add").onclick = () => {
+  document.getElementById("create-modal").classList.add("open");
+};
+
+document.getElementById("ev-save").onclick = async () => {
+  const type = document.getElementById("ev-type").value;
+  const date = document.getElementById("ev-date").value;
+  const time = document.getElementById("ev-time").value;
+  const description = document.getElementById("ev-desc").value.trim();
+  if (!date) return alert("Укажите дату");
+  const { error } = await supabase.from("events").insert({ type, date, time: time || null, description, created_by: userId });
+  if (error) return alert("Ошибка: " + error.message);
+  document.getElementById("create-modal").classList.remove("open");
+  document.getElementById("ev-date").value = "";
+  document.getElementById("ev-time").value = "";
+  document.getElementById("ev-desc").value = "";
+  await loadEvents();
+};
+
+document.querySelectorAll(".modal-bg").forEach(m => {
+  m.onclick = (e) => { if (e.target === m && m.id !== "reg-modal") m.classList.remove("open"); };
+});
+
+init();
+</script>
+</body>
+</html>
