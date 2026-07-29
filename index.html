@@ -79,6 +79,8 @@
   <div class="tab" data-tab="calendar">Календарь</div>
 </div>
 
+<input id="search-input" type="text" placeholder="🔍 Поиск по событиям (например: мусор)">
+
 <div id="view-list"></div>
 <div id="view-calendar" style="display:none"></div>
 
@@ -130,6 +132,7 @@ const defaultName = tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolea
 let currentResident = null;
 let events = [];
 let editingEventId = null;
+let searchQuery = "";
 const todayDate = new Date();
 let calYear = todayDate.getFullYear();
 let calMonth = todayDate.getMonth();
@@ -167,15 +170,34 @@ async function loadEvents() {
   renderCalendar();
 }
 
+function matchesSearch(e, query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const haystack = `${e.type} ${e.description || ""}`.toLowerCase();
+  return words.every(w => haystack.includes(w));
+}
+
 function renderList() {
   const el = document.getElementById("view-list");
-  const today = new Date().toISOString().slice(0, 10);
-  const upcoming = events.filter(e => e.date >= today);
-  if (!upcoming.length) {
-    el.innerHTML = '<div class="empty">Пока нет запланированных событий</div>';
-    return;
+  const query = searchQuery.trim();
+
+  let list;
+  if (query) {
+    list = events.filter(e => matchesSearch(e, query)).sort((a, b) => a.date.localeCompare(b.date));
+    if (!list.length) {
+      el.innerHTML = `<div class="empty">По запросу «${query}» ничего не найдено</div>`;
+      return;
+    }
+  } else {
+    const today = new Date().toISOString().slice(0, 10);
+    list = events.filter(e => e.date >= today);
+    if (!list.length) {
+      el.innerHTML = '<div class="empty">Пока нет запланированных событий</div>';
+      return;
+    }
   }
-  el.innerHTML = upcoming.map(renderCard).join("");
+
+  el.innerHTML = list.map(renderCard).join("");
   attachCardHandlers();
 }
 
@@ -270,12 +292,19 @@ function renderCalendar() {
   };
 }
 
+document.getElementById("search-input").oninput = (e) => {
+  searchQuery = e.target.value;
+  renderList();
+};
+
 document.querySelectorAll(".tab").forEach(tab => {
   tab.onclick = () => {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
-    document.getElementById("view-list").style.display = tab.dataset.tab === "list" ? "block" : "none";
-    document.getElementById("view-calendar").style.display = tab.dataset.tab === "calendar" ? "block" : "none";
+    const isList = tab.dataset.tab === "list";
+    document.getElementById("view-list").style.display = isList ? "block" : "none";
+    document.getElementById("view-calendar").style.display = isList ? "none" : "block";
+    document.getElementById("search-input").style.display = isList ? "block" : "none";
   };
 });
 
