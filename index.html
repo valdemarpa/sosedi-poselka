@@ -38,8 +38,20 @@
   .btn-join { background: #34c759; color: #fff; }
   .btn-leave { background: #ff3b30; color: #fff; }
   .btn-edit { background: #e5e5e7; color: #1a1a1a; }
+  .btn-delete { background: #fdeaea; color: #ff3b30; }
+  .btn-chat { background: #5856d6; color: #fff; width: 100%; margin-top: 8px; }
   .card-actions { display: flex; gap: 8px; }
   .card-actions button { flex: 1; }
+  .owner-actions { margin-top: 8px; }
+  .chat-msg { margin-bottom: 10px; }
+  .chat-msg .who { font-size: 12px; color: #888; font-weight: 600; margin-bottom: 2px; }
+  .chat-msg .text { font-size: 14px; background: #f0f0f2; border-radius: 8px; padding: 8px 10px; display: inline-block; }
+  .chat-msg.own { text-align: right; }
+  .chat-msg.own .text { background: #2481cc; color: #fff; }
+  .cal-day.clickable { cursor: pointer; }
+  .chat-row { display: flex; gap: 8px; align-items: flex-start; }
+  .chat-row input { margin-bottom: 0; }
+  .chat-row button { width: auto; padding: 10px 16px; }
   .fab {
     position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px;
     border-radius: 50%; background: #2481cc; color: #fff; font-size: 28px;
@@ -110,6 +122,26 @@
     <input id="ev-time" type="time">
     <textarea id="ev-desc" placeholder="Описание (необязательно)" rows="3"></textarea>
     <button class="btn-primary" id="ev-save">Создать</button>
+  </div>
+</div>
+
+<!-- События выбранной даты -->
+<div class="modal-bg" id="day-modal">
+  <div class="modal">
+    <h2 id="day-modal-title">События</h2>
+    <div id="day-modal-list"></div>
+  </div>
+</div>
+
+<!-- Чат участников события -->
+<div class="modal-bg" id="chat-modal">
+  <div class="modal">
+    <h2 id="chat-modal-title">💬 Чат</h2>
+    <div id="chat-messages"></div>
+    <div class="chat-row">
+      <input id="chat-input" placeholder="Сообщение...">
+      <button class="btn-primary" id="chat-send">➤</button>
+    </div>
   </div>
 </div>
 
@@ -216,8 +248,13 @@ function renderCard(e) {
         <button class="${joined ? "btn-leave" : "btn-join"}" data-id="${e.id}" data-joined="${joined}">
           ${joined ? "Не пойду" : "Присоединиться"}
         </button>
-        ${isOwner ? `<button class="btn-edit" data-edit-id="${e.id}">Изменить</button>` : ""}
       </div>
+      ${isOwner ? `
+      <div class="card-actions owner-actions">
+        <button class="btn-edit" data-edit-id="${e.id}">Изменить</button>
+        <button class="btn-delete" data-delete-id="${e.id}">Удалить</button>
+      </div>` : ""}
+      ${joined ? `<button class="btn-chat" data-chat-id="${e.id}">💬 Чат участников</button>` : ""}
     </div>`;
 }
 
@@ -240,9 +277,102 @@ function attachCardHandlers() {
       if (ev) openEditModal(ev);
     };
   });
+  document.querySelectorAll("[data-delete-id]").forEach(btn => {
+    btn.onclick = () => deleteEvent(btn.dataset.deleteId);
+  });
+  document.querySelectorAll("[data-chat-id]").forEach(btn => {
+    btn.onclick = () => openChat(btn.dataset.chatId);
+  });
 }
 
+function deleteEvent(id) {
+  const doDelete = async () => {
+    const { error } = await sb.from("events").delete().eq("id", id);
+    if (error) return alert("Ошибка: " + error.message);
+    document.getElementById("day-modal").classList.remove("open");
+    await loadEvents();
+  };
+  if (tg?.showConfirm) {
+    tg.showConfirm("Удалить это событие? Отменить будет нельзя.", (ok) => { if (ok) doDelete(); });
+  } else if (confirm("Удалить это событие? Отменить будет нельзя.")) {
+    doDelete();
+  }
+}
+
+function openDayModal(dateStr) {
+  const dayEvents = events.filter(e => e.date === dateStr);
+  const label = new Date(dateStr + "T00:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  document.getElementById("day-modal-title").textContent = `События: ${label}`;
+  const listEl = document.getElementById("day-modal-list");
+  listEl.innerHTML = dayEvents.map(renderCard).join("") || '<div class="empty">Событий нет</div>';
+  document.getElementById("day-modal").classList.add("open");
+  attachCardHandlers();
+}
+
+let chatEventId = null;
+let chatPollTimer = null;
+
+function openChat(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  chatEventId = eventId;
+  document.getElementById("chat-modal-title").textContent = `💬 ${ev ? ev.type : "Чат"}`;
+  document.getElementById("day-modal").classList.remove("open");
+  document.getElementById("chat-modal").classList.add("open");
+  loadMessages();
+  if (chatPollTimer) clearInterval(chatPollTimer);
+  chatPollTimer = setInterval(loadMessages, 3000);
+}
+
+function closeChat() {
+  if (chatPollTimer) clearInterval(chatPollTimer);
+  chatPollTimer = null;
+  chatEventId = null;
+}
+
+async function loadMessages() {
+  if (!chatEventId) return;
+  const { data } = await sb
+    .from("messages")
+    .select("*, residents(name)")
+    .eq("event_id", chatEventId)
+    .order("created_at", { ascending: true });
+  renderMessages(data || []);
+}
+
+function renderMessages(list) {
+  const el = document.getElementById("chat-messages");
+  if (!list.length) {
+    el.innerHTML = '<div class="empty">Сообщений пока нет</div>';
+    return;
+  }
+  el.innerHTML = list.map(m => {
+    const own = m.user_id === userId;
+    const name = own ? "Вы" : (m.residents?.name || "Житель");
+    return `
+      <div class="chat-msg ${own ? "own" : ""}">
+        <div class="who">${name}</div>
+        <div class="text">${m.text}</div>
+      </div>`;
+  }).join("");
+  el.scrollTop = el.scrollHeight;
+}
+
+document.getElementById("chat-send").onclick = async () => {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || !chatEventId) return;
+  input.value = "";
+  const { error } = await sb.from("messages").insert({ event_id: chatEventId, user_id: userId, text });
+  if (error) return alert("Ошибка: " + error.message);
+  await loadMessages();
+};
+
+document.getElementById("chat-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("chat-send").click();
+});
+
 function openEditModal(ev) {
+  document.getElementById("day-modal").classList.remove("open");
   editingEventId = ev.id;
   document.getElementById("create-modal-title").textContent = "Изменить событие";
   document.getElementById("ev-type").value = ev.type;
@@ -275,10 +405,14 @@ function renderCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const has = eventDates.has(dateStr);
-    html += `<div class="cal-day ${has ? "has-event" : ""}">${d}</div>`;
+    html += `<div class="cal-day ${has ? "has-event clickable" : ""}" ${has ? `data-date="${dateStr}"` : ""}>${d}</div>`;
   }
   html += `</div>`;
   el.innerHTML = html;
+
+  document.querySelectorAll("[data-date]").forEach(dayEl => {
+    dayEl.onclick = () => openDayModal(dayEl.dataset.date);
+  });
 
   document.getElementById("cal-prev").onclick = () => {
     calMonth--;
@@ -346,7 +480,12 @@ document.getElementById("ev-save").onclick = async () => {
 };
 
 document.querySelectorAll(".modal-bg").forEach(m => {
-  m.onclick = (e) => { if (e.target === m && m.id !== "reg-modal") m.classList.remove("open"); };
+  m.onclick = (e) => {
+    if (e.target === m && m.id !== "reg-modal") {
+      m.classList.remove("open");
+      if (m.id === "chat-modal") closeChat();
+    }
+  };
 });
 
 init();
