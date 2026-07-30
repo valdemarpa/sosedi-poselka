@@ -4,87 +4,168 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Общее дело</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
+  :root {
+    --paper: #E7E4D6;
+    --note: #F3F0E4;
+    --ink: #262A22;
+    --pine: #33473A;
+    --pine-deep: #223229;
+    --barn: #A23F2E;
+    --wheat: #C79A2E;
+    --line: #C7C2AC;
+    --muted: #6B6F5F;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--tg-theme-bg-color, #f4f4f5);
-    color: var(--tg-theme-text-color, #1a1a1a);
+    margin: 0; padding: 0 0 90px;
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    background: var(--paper);
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(0,0,0,0.03) 0, transparent 40%),
+      radial-gradient(circle at 90% 75%, rgba(0,0,0,0.03) 0, transparent 40%);
+    color: var(--ink);
   }
-  h1 { font-size: 20px; margin: 8px 0 16px; }
-  h2 { font-size: 16px; margin: 16px 0 8px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  header {
+    background: var(--pine-deep);
+    color: var(--paper);
+    padding: 20px 16px 22px;
+    border-bottom: 4px solid var(--barn);
+  }
+  header .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #A9BBAE; margin-bottom: 6px;
+  }
+  h1 {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 24px; margin: 0; line-height: 1.15;
+  }
+  h2 { font-family: 'Fraunces', serif; font-size: 17px; font-weight: 600; margin: 16px 0 10px; }
+
+  .content { padding: 0 16px; }
+
+  .tabs {
+    display: flex; margin: 16px 0 12px;
+    border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden;
+  }
   .tab {
-    flex: 1; padding: 10px; text-align: center; border-radius: 10px;
-    background: #e5e5e7; cursor: pointer; font-size: 14px; font-weight: 600;
+    flex: 1; padding: 9px 0; text-align: center; cursor: pointer;
+    font-size: 13px; font-weight: 600; font-family: 'IBM Plex Mono', monospace;
+    background: var(--paper); color: var(--ink);
   }
-  .tab.active { background: #2481cc; color: #fff; }
+  .tab.active { background: var(--ink); color: var(--paper); }
+
+  input, select, textarea {
+    width: 100%; padding: 10px 12px; margin-bottom: 10px;
+    border-radius: 6px; border: 1.5px solid var(--line);
+    font-size: 14px; font-family: 'IBM Plex Sans', sans-serif;
+    background: #fff; color: var(--ink);
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--pine); outline-offset: 1px; border-color: var(--pine);
+  }
+
   .card {
-    background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 10px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    background: var(--note); border: 1px solid var(--line); border-radius: 3px;
+    padding: 16px 16px 14px; margin-bottom: 22px; position: relative;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.04), 0 8px 16px -8px rgba(0,0,0,0.18);
   }
-  .card .type { font-weight: 700; font-size: 15px; }
-  .card .when { color: #666; font-size: 13px; margin: 4px 0; }
-  .card .desc { font-size: 14px; margin: 6px 0; }
-  .card .who { font-size: 12px; color: #888; margin-bottom: 8px; }
+  .card::before {
+    content: ''; position: absolute; top: -9px; left: 20px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #D8624A, var(--barn));
+    box-shadow: 0 2px 3px rgba(0,0,0,0.35);
+  }
+  .card:nth-child(odd) { transform: rotate(-0.5deg); }
+  .card:nth-child(even) { transform: rotate(0.6deg); }
+
+  .card .type {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 17px; margin-bottom: 8px;
+  }
+  .card .when {
+    display: inline-flex; font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    color: var(--pine); border: 1.5px solid var(--pine); border-radius: 4px;
+    padding: 2px 8px; transform: rotate(-1deg); margin-bottom: 10px;
+  }
+  .card .desc { font-size: 13.5px; line-height: 1.45; margin: 0 0 12px; color: #4A4E42; }
+  .card .who { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+
   button {
-    border: none; border-radius: 8px; padding: 10px 14px; font-size: 14px;
-    font-weight: 600; cursor: pointer;
+    border: none; border-radius: 5px; padding: 10px 14px;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.01em;
   }
-  .btn-primary { background: #2481cc; color: #fff; width: 100%; }
-  .btn-join { background: #34c759; color: #fff; }
-  .btn-leave { background: #ff3b30; color: #fff; }
-  .btn-edit { background: #e5e5e7; color: #1a1a1a; }
-  .btn-delete { background: #fdeaea; color: #ff3b30; }
-  .btn-chat { background: #5856d6; color: #fff; width: 100%; margin-top: 8px; }
+  .btn-primary { background: var(--pine); color: var(--paper); width: 100%; }
+  .btn-join { background: var(--pine); color: var(--paper); }
+  .btn-leave { background: var(--barn); color: var(--paper); }
+  .btn-edit { background: transparent; color: var(--ink); border: 1.5px solid var(--line); }
+  .btn-delete { background: transparent; color: var(--barn); border: 1.5px solid var(--barn); }
+  .btn-chat { background: var(--wheat); color: var(--ink); width: 100%; margin-top: 8px; }
   .card-actions { display: flex; gap: 8px; }
   .card-actions button { flex: 1; }
   .owner-actions { margin-top: 8px; }
+
   .chat-msg { margin-bottom: 10px; }
-  .chat-msg .who { font-size: 12px; color: #888; font-weight: 600; margin-bottom: 2px; }
-  .chat-msg .text { font-size: 14px; background: #f0f0f2; border-radius: 8px; padding: 8px 10px; display: inline-block; }
+  .chat-msg .who { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+  .chat-msg .text {
+    font-size: 13.5px; background: #EFEBDC; border-radius: 8px;
+    padding: 8px 11px; display: inline-block; border: 1px solid var(--line);
+  }
   .chat-msg.own { text-align: right; }
-  .chat-msg.own .text { background: #2481cc; color: #fff; }
-  .cal-day.clickable { cursor: pointer; }
+  .chat-msg.own .text { background: var(--pine); color: var(--paper); border: none; }
+
   .chat-row { display: flex; gap: 8px; align-items: flex-start; }
   .chat-row input { margin-bottom: 0; }
-  .chat-row button { width: auto; padding: 10px 16px; }
+  .chat-row button { width: auto; padding: 10px 16px; background: var(--pine); color: var(--paper); }
+
   .fab {
-    position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px;
-    border-radius: 50%; background: #2481cc; color: #fff; font-size: 28px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    position: fixed; bottom: 22px; right: 20px; width: 54px; height: 54px;
+    border-radius: 50%; background: var(--barn); color: var(--paper);
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    box-shadow: 0 6px 14px -4px rgba(162,63,46,0.55); cursor: pointer;
   }
-  input, select, textarea {
-    width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 8px;
-    border: 1px solid #ccc; font-size: 14px;
-  }
+
   .modal-bg {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: none; position: fixed; inset: 0; background: rgba(34,50,41,0.45);
     align-items: flex-end; justify-content: center; z-index: 100;
   }
   .modal-bg.open { display: flex; }
   .modal {
-    background: #fff; width: 100%; max-width: 480px; border-radius: 16px 16px 0 0;
-    padding: 20px; max-height: 85vh; overflow-y: auto;
+    background: var(--paper); width: 100%; max-width: 480px;
+    border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto;
+    border-top: 4px solid var(--barn);
   }
+
   .cal-nav { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
   .cal-nav-btn {
-    width: 36px; height: 36px; border-radius: 8px; background: #e5e5e7;
-    font-size: 16px; font-weight: 700; padding: 0;
+    width: 34px; height: 34px; border-radius: 6px; background: var(--ink); color: var(--paper);
+    font-size: 15px; font-weight: 700; padding: 0;
   }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
-  .cal-day { padding: 8px 0; font-size: 13px; border-radius: 6px; }
-  .cal-day.has-event { background: #34c759; color: #fff; font-weight: 700; }
-  .cal-head { font-size: 11px; color: #888; }
-  .empty { text-align: center; color: #999; padding: 30px 0; font-size: 14px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
+  .cal-day {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; border-radius: 6px; font-family: 'IBM Plex Mono', monospace;
+  }
+  .cal-day.has-event { background: var(--pine); color: var(--paper); font-weight: 600; }
+  .cal-day.clickable { cursor: pointer; }
+  .cal-head { font-size: 10px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+
+  .empty { text-align: center; color: var(--muted); padding: 30px 0; font-size: 13.5px; font-family: 'IBM Plex Mono', monospace; }
 </style>
 </head>
 <body>
 
-<h1>🏘️ Общее дело</h1>
+<header>
+  <div class="eyebrow">Скооперируемся · посёлок</div>
+  <h1>🏘️ Общее дело</h1>
+</header>
+
+<div class="content">
 
 <div class="tabs">
   <div class="tab active" data-tab="list">Ближайшие</div>
@@ -95,6 +176,8 @@
 
 <div id="view-list"></div>
 <div id="view-calendar" style="display:none"></div>
+
+</div>
 
 <div class="fab" id="fab-add">+</div>
 
@@ -141,7 +224,7 @@
     <div id="chat-messages"></div>
     <div class="chat-row">
       <input id="chat-input" placeholder="Сообщение...">
-      <button class="btn-primary" id="chat-send">➤</button>
+      <button id="chat-send">➤</button>
     </div>
   </div>
 </div>
